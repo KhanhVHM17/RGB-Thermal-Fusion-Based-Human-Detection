@@ -1,0 +1,2264 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drone Person Detection</title>
+    <!-- Leaflet + plugins -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg:        #0a0e1a;
+            --surface:   #111827;
+            --surface2:  #1a2236;
+            --border:    #243044;
+            --accent:    #6366f1;
+            --accent-h:  #818cf8;
+            --accent2:   #22d3ee;
+            --green:     #34d399;
+            --yellow:    #fbbf24;
+            --red:       #f87171;
+            --text:      #e2e8f0;
+            --text-muted:#94a3b8;
+            --radius:    8px;
+        }
+
+        body {
+            font-family: 'Segoe UI', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── Header ── */
+        header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+            gap: 12px;
+        }
+        .header-left { display: flex; align-items: center; gap: 10px; }
+        .logo-dot {
+            width: 10px; height: 10px;
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--accent);
+            animation: pulse 2s ease-in-out infinite;
+        }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        header h1 { font-size: 14px; font-weight: 600; letter-spacing: 0.3px; }
+        header h1 span { color: var(--accent); }
+
+        .status-chips { display: flex; gap: 6px; align-items: center; }
+        .chip {
+            display: flex; align-items: center; gap: 5px;
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: 20px; padding: 3px 9px;
+            font-size: 11px; color: var(--text-muted);
+            transition: border-color 0.2s;
+        }
+        .chip .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+        .dot-green  { background: var(--green);  box-shadow: 0 0 4px var(--green); }
+        .dot-red    { background: var(--red);    box-shadow: 0 0 4px var(--red); }
+        .dot-yellow { background: var(--yellow); box-shadow: 0 0 4px var(--yellow); }
+        .chip.active { border-color: var(--green); color: var(--text); }
+
+        /* ── Live mode ── */
+        .btn-live {
+            background: transparent; border: 1px solid var(--red);
+            color: var(--red); box-shadow: none;
+            font-weight: 700; letter-spacing: 0.5px;
+        }
+        .btn-live:hover { background: rgba(248,113,113,0.1); }
+        .btn-live.active {
+            background: var(--red); color: #fff;
+            box-shadow: 0 0 8px rgba(248,113,113,0.4);
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        .live-config {
+            display: none; gap: 6px; align-items: center;
+            padding: 6px 10px;
+            background: var(--surface); border-top: 1px solid var(--border);
+            flex-wrap: wrap;
+        }
+        .live-config.show { display: flex; }
+        .live-config label { font-size: 10px; color: var(--text-muted); }
+        .live-config input[type=number] {
+            width: 64px; background: var(--surface2); border: 1px solid var(--border);
+            color: var(--text); padding: 3px 6px; border-radius: 4px; font-size: 11px;
+        }
+        .live-config .btn { font-size: 10px; padding: 4px 10px; }
+        .telem-bar {
+            display: none; gap: 10px; align-items: center;
+            padding: 4px 10px;
+            background: rgba(248,113,113,0.06); border-top: 1px solid rgba(248,113,113,0.2);
+            font-size: 10px; color: var(--text-muted);
+            font-variant-numeric: tabular-nums;
+        }
+        .telem-bar.show { display: flex; }
+        .telem-bar .telem-val { color: var(--accent2); font-weight: 500; }
+
+        /* ── Live tabs ── */
+        #adbPreviewImg { border-radius: 4px; }
+        .live-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); }
+        .live-tab {
+            padding: 4px 14px; font-size: 10px; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.3px;
+            color: var(--text-muted); background: transparent;
+            border: none; border-bottom: 2px solid transparent;
+            cursor: pointer; transition: all 0.15s;
+        }
+        .live-tab:hover { color: var(--text); }
+        .live-tab.active { color: var(--accent2); border-bottom-color: var(--accent2); }
+        .live-tab-content { display: none; }
+        .live-tab-content.active { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 6px 10px; }
+        .adb-row { display: flex; gap: 6px; align-items: center; width: 100%; }
+        .adb-row input[type=text], .adb-row input[type=password] {
+            width: 110px; background: var(--surface2); border: 1px solid var(--border);
+            color: var(--text); padding: 5px 8px; border-radius: 4px; font-size: 13px;
+            font-family: monospace;
+        }
+        .adb-row input[type=text]:focus, .adb-row input[type=password]:focus { border-color: var(--accent2); outline: none; }
+        .adb-devices {
+            font-size: 12px; color: var(--text-muted); padding: 2px 0;
+            width: 100%;
+        }
+        .adb-devices .dev-ok { color: var(--green); }
+        .adb-devices .dev-off { color: var(--red); }
+        .adb-step-label {
+            font-size: 11px; color: var(--text-muted); font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.3px;
+            background: var(--surface2); padding: 2px 6px; border-radius: 3px;
+            flex-shrink: 0;
+        }
+
+        /* ── 2-column main grid ── */
+        .main {
+            flex: 1;
+            display: grid;
+            grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+            grid-template-rows: 1fr;
+            overflow: hidden;
+            gap: 0;
+        }
+
+        /* ── Panel base ── */
+        .panel {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border-right: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+        }
+        .panel:last-child { border-bottom: none; }
+        .right-column > .panel:last-child { border-bottom: none; }
+        .right-column > .panel { border-right: none; }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 12px;
+            background: var(--surface2);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            gap: 8px;
+        }
+        .panel-title {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+        }
+        .panel-title span { color: var(--accent2); }
+        .panel-actions { display: flex; align-items: center; gap: 6px; }
+
+        /* ── PANEL 1: Video (top-left) ── */
+        .video-wrapper {
+            flex: 1;
+            position: relative;
+            background: #000;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .video-wrapper img {
+            max-width: 100%; max-height: 100%;
+            object-fit: contain; display: block;
+        }
+        .video-overlay {
+            position: absolute; top: 8px; right: 8px;
+            display: flex; gap: 5px; flex-direction: column; align-items: flex-end;
+        }
+        .overlay-badge {
+            background: rgba(0,0,0,0.65);
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 5px; padding: 3px 7px;
+            font-size: 11px; color: #fff;
+        }
+        .overlay-badge.detect-count {
+            background: rgba(99,102,241,0.8);
+            border-color: rgba(129,140,248,0.5);
+            font-weight: 600;
+        }
+        .upload-bar {
+            display: flex; gap: 6px; align-items: center;
+            padding: 8px 10px;
+            background: var(--surface); border-top: 1px solid var(--border);
+        }
+        .file-label {
+            flex: 1; display: flex; align-items: center; gap: 6px;
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 5px 9px;
+            cursor: pointer; font-size: 11px; color: var(--text-muted);
+            overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+            transition: border-color 0.2s;
+        }
+        .file-label:hover { border-color: var(--accent2); color: var(--text); }
+        .file-label input[type=file] { display: none; }
+        #fileNameDisplay { overflow: hidden; text-overflow: ellipsis; }
+        .video-controls {
+            display: flex; gap: 6px; align-items: center;
+            padding: 6px 10px;
+            background: var(--surface); border-top: 1px solid var(--border);
+        }
+        .btn {
+            background: linear-gradient(135deg, var(--accent), #4f46e5);
+            color: #fff; border: none; padding: 5px 13px;
+            border-radius: var(--radius); cursor: pointer;
+            font-size: 11px; font-weight: 500;
+            transition: opacity 0.15s, box-shadow 0.15s;
+            white-space: nowrap; flex-shrink: 0;
+            box-shadow: 0 2px 6px rgba(99,102,241,0.3);
+        }
+        .btn:hover { opacity: 0.88; }
+        .btn:disabled { background: #1e2a3a; color: #4a5568; cursor: not-allowed; box-shadow: none; }
+        .btn-cyan {
+            background: linear-gradient(135deg, var(--accent2), #0891b2);
+            box-shadow: 0 2px 6px rgba(34,211,238,0.25);
+        }
+        .btn-ghost {
+            background: transparent; border: 1px solid var(--border);
+            color: var(--text-muted); box-shadow: none;
+        }
+        .btn-ghost:hover { border-color: var(--accent2); color: var(--accent2); background: rgba(34,211,238,0.06); }
+        .btn-sm { padding: 3px 9px; font-size: 10px; }
+
+        .seek-track { flex: 1; height: 20px; display: flex; align-items: center; }
+        .seek-bar {
+            width: 100%; -webkit-appearance: none; appearance: none;
+            height: 3px; background: var(--border); border-radius: 2px;
+            outline: none; cursor: pointer; accent-color: var(--accent);
+        }
+        .seek-bar::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 12px; height: 12px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent-h), var(--accent2));
+            cursor: pointer; box-shadow: 0 0 5px rgba(99,102,241,0.5);
+        }
+        .time-label {
+            font-size: 10px; color: var(--text-muted);
+            min-width: 32px; text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* ── PANEL 2: Detection list (bottom-left) ── */
+        .det-scroll {
+            flex: 1; overflow-y: auto; padding: 8px;
+            display: flex; flex-direction: column; gap: 6px;
+        }
+        .det-scroll::-webkit-scrollbar { width: 4px; }
+        .det-scroll::-webkit-scrollbar-track { background: transparent; }
+        .det-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+        .det-card {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            display: flex;
+            flex-direction: row;
+            overflow: hidden;
+            transition: border-color 0.15s, box-shadow 0.15s;
+            cursor: pointer;
+            min-height: 72px;
+        }
+        .det-card:hover { border-color: var(--accent2); box-shadow: 0 0 0 1px rgba(34,211,238,0.15); }
+        .det-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(99,102,241,0.3); }
+
+        .det-thumb {
+            width: 68px; height: 68px;
+            background: #000; object-fit: cover;
+            display: block; flex-shrink: 0;
+            margin: 4px; border-radius: 4px;
+            cursor: zoom-in;
+        }
+        .det-thumb:hover { opacity: 0.85; }
+        .det-thumb-placeholder {
+            width: 68px; height: 68px;
+            background: var(--bg);
+            display: flex; align-items: center; justify-content: center;
+            margin: 4px; border-radius: 4px;
+            color: var(--border); font-size: 20px;
+            flex-shrink: 0;
+        }
+        .det-body {
+            flex: 1; min-width: 0;
+            padding: 5px 8px 5px 6px;
+            display: flex; flex-direction: column; gap: 2px;
+            justify-content: center;
+        }
+        .det-top-row {
+            display: flex; align-items: center; gap: 6px;
+        }
+        .det-id {
+            font-size: 11px; font-weight: 700; color: var(--accent-h);
+            flex-shrink: 0;
+        }
+        .conf-bar-bg {
+            flex: 1; height: 3px; max-width: 80px;
+            background: var(--border); border-radius: 2px; overflow: hidden;
+        }
+        .conf-bar { height: 100%; border-radius: 2px; transition: width 0.3s; }
+        .conf-val { font-size: 10px; color: var(--text-muted); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+
+        .det-gps { color: var(--accent2); font-size: 9px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .det-meta {
+            display: flex; flex-wrap: wrap; gap: 1px 8px;
+            font-size: 9px; color: var(--text-muted);
+        }
+        .det-meta span { white-space: nowrap; }
+        .det-meta .lbl { color: var(--border); }
+
+        .det-actions { display: flex; gap: 3px; margin-top: 1px; }
+        .det-btn {
+            background: transparent; border: 1px solid var(--border);
+            color: var(--text-muted); padding: 1px 6px;
+            border-radius: 3px; font-size: 9px; cursor: pointer;
+            transition: all 0.12s;
+        }
+        .det-btn.fly:hover  { border-color: var(--accent2); color: var(--accent2); background: rgba(34,211,238,0.08); }
+        .det-btn.map:hover  { border-color: var(--green); color: var(--green); background: rgba(52,211,153,0.08); }
+        .det-flag-right {
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0; width: 38px;
+            border-left: 1px solid var(--border);
+            cursor: pointer; transition: all 0.15s;
+            font-size: 16px; color: var(--text-muted);
+            background: transparent;
+        }
+        .det-flag-right:hover { background: rgba(248,113,113,0.12); color: var(--red); }
+        .det-flag-right.flagged { color: var(--red); }
+
+        .no-det {
+            text-align: center; color: var(--text-muted);
+            font-size: 12px; padding: 24px 0;
+        }
+
+        /* Inner tabs (Detections | History) */
+        .det-inner-tabs {
+            display: flex; border-bottom: 1px solid var(--border);
+            background: var(--surface); flex-shrink: 0;
+        }
+        .det-inner-tab {
+            flex: 1; padding: 7px 0; font-size: 11px; font-weight: 600;
+            background: none; border: none; border-bottom: 2px solid transparent;
+            color: var(--text-muted); cursor: pointer; transition: color .15s;
+        }
+        .det-inner-tab:hover { color: var(--text); }
+        .det-inner-tab.active { color: var(--accent2); border-bottom-color: var(--accent2); }
+
+        /* Tab content panels */
+        .det-tab-content { display: none; flex: 1; flex-direction: column; overflow: hidden; min-height: 0; }
+        .det-tab-content.active { display: flex; }
+
+        /* History layout */
+        .hist-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 5px 12px; border-bottom: 1px solid var(--border);
+            font-size: 11px; color: var(--text-muted); flex-shrink: 0;
+            background: var(--surface);
+        }
+        .hist-scroll {
+            flex: 1; overflow-y: auto; padding: 6px 8px;
+            display: flex; flex-direction: column; gap: 6px;
+        }
+        .hist-scroll::-webkit-scrollbar { width: 4px; }
+        .hist-scroll::-webkit-scrollbar-track { background: transparent; }
+        .hist-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+        /* History cards */
+        .hist-card {
+            display: flex; gap: 8px; align-items: flex-start;
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 6px 8px;
+            font-size: 11px; flex-shrink: 0;
+        }
+        .hist-card:hover { border-color: var(--accent2); }
+        .hist-thumb {
+            width: 64px; height: 64px; object-fit: cover;
+            border-radius: 4px; flex-shrink: 0; cursor: pointer;
+            background: var(--surface);
+        }
+        .hist-info { flex: 1; min-width: 0; }
+        .hist-info .hi-row { color: var(--text-muted); line-height: 1.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .hist-info .hi-conf { color: var(--accent2); font-weight: 600; }
+        .hist-info .hi-gps  { color: var(--text); }
+        .hist-info .hi-time { color: var(--text-muted); font-size: 10px; }
+        .hist-flag-btn {
+            background: none; border: 1px solid var(--border); border-radius: 4px;
+            color: var(--text-muted); cursor: pointer; padding: 3px 7px;
+            font-size: 13px; align-self: center; flex-shrink: 0; transition: all .15s;
+        }
+        .hist-flag-btn:hover { border-color: #f59e0b; color: #f59e0b; }
+        .hist-flag-btn.flagged { border-color: #f59e0b; color: #f59e0b; }
+
+        /* Config panel (collapsible, inside panel 2 header) */
+        .cfg-drawer {
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+            padding: 8px 12px;
+            flex-shrink: 0;
+        }
+        .cfg-drawer.hidden { display: none; }
+        .config-grid {
+            display: grid; grid-template-columns: 60px 1fr 60px 1fr;
+            gap: 5px 8px; align-items: center; font-size: 11px;
+        }
+        .config-grid label { text-align: right; color: var(--text-muted); }
+        .config-grid input {
+            background: var(--bg); border: 1px solid var(--border);
+            color: var(--text); padding: 4px 6px;
+            border-radius: 4px; font-size: 11px; width: 100%;
+        }
+        .config-grid input:focus { outline: none; border-color: var(--accent2); }
+        .cfg-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+
+        /* ── Right column: Detection + Map tabs ── */
+        .right-column {
+            grid-column: 2; grid-row: 1;
+            display: flex; flex-direction: column; overflow: hidden;
+        }
+
+        /* ── Bottom-right tabs: 2D Map | Coverage ── */
+        .br-tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface2);
+            flex-shrink: 0;
+        }
+        .br-tab {
+            flex: 1; padding: 6px 4px;
+            background: transparent; border: none;
+            border-bottom: 2px solid transparent;
+            color: var(--text-muted); font-size: 10px;
+            font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+            cursor: pointer; transition: color 0.15s, border-color 0.15s;
+        }
+        .br-tab:hover { color: var(--text); }
+        .br-tab.active { color: var(--accent-h); border-bottom-color: var(--accent); }
+        .br-content { flex: 1; overflow: hidden; display: none; flex-direction: column; }
+        .br-content.active { display: flex; }
+
+        /* 2D Map */
+        #googleMap2d { width: 100%; height: 100%; }
+
+        /* Coverage / Leaflet */
+        .heat-container { flex: 1; position: relative; overflow: hidden; }
+        #leafletMap { width: 100%; height: 100%; }
+        .heat-legend {
+            position: absolute; bottom: 20px; right: 10px; z-index: 1000;
+            background: rgba(17,24,39,0.88);
+            backdrop-filter: blur(6px);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 8px 10px;
+            font-size: 10px; color: var(--text-muted);
+            min-width: 110px;
+        }
+        .heat-legend-title {
+            font-weight: 700; font-size: 10px;
+            color: var(--text); margin-bottom: 6px;
+            text-transform: uppercase; letter-spacing: 0.4px;
+        }
+        .heat-legend-bar {
+            height: 8px; border-radius: 4px;
+            background: linear-gradient(to right, #3b82f6, #22d3ee, #34d399, #fbbf24, #f87171);
+            margin-bottom: 4px;
+        }
+        .heat-legend-labels {
+            display: flex; justify-content: space-between;
+            font-size: 9px; color: var(--text-muted);
+        }
+        .heat-legend-rows { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
+        .heat-legend-row { display: flex; align-items: center; gap: 6px; }
+        .heat-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+        /* ── Snapshot popup (over panel 3) ── */
+        #snapshotPopup {
+            position: absolute;
+            top: 44px; right: 8px;
+            width: 210px;
+            background: rgba(17,24,39,0.95);
+            backdrop-filter: blur(8px);
+            border: 1px solid var(--accent2);
+            border-radius: var(--radius);
+            z-index: 200;
+            box-shadow: 0 4px 20px rgba(34,211,238,0.25);
+            overflow: hidden;
+        }
+        .popup-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 5px 9px;
+            background: var(--surface2);
+            font-size: 11px; font-weight: 600; color: var(--accent2);
+        }
+        .popup-close {
+            background: none; border: none; color: var(--text-muted);
+            font-size: 15px; cursor: pointer; padding: 0 3px;
+        }
+        .popup-close:hover { color: var(--red); }
+        #snapshotPopup img {
+            width: 100%; max-height: 150px;
+            object-fit: contain; background: #000; display: block;
+        }
+        .popup-info {
+            padding: 5px 9px; font-size: 10px; color: var(--text-muted);
+            display: flex; flex-direction: column; gap: 2px;
+        }
+        .popup-info span { color: var(--accent2); font-weight: 600; }
+
+        /* ── Toast ── */
+        .toast {
+            position: fixed; bottom: 16px; right: 16px;
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 7px 12px;
+            font-size: 11px; color: var(--text); z-index: 999;
+            opacity: 0; transform: translateY(6px);
+            transition: opacity 0.2s, transform 0.2s;
+            pointer-events: none;
+        }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast.success { border-color: var(--green); }
+        .toast.error { border-color: var(--red); }
+
+        /* Fly-to-drone button */
+        .fly-btn {
+            background: rgba(34,211,238,0.1);
+            color: var(--accent2);
+            border: 1px solid rgba(34,211,238,0.25);
+            border-radius: 4px; padding: 2px 8px;
+            font-size: 10px; cursor: pointer; font-weight: 600;
+            transition: all 0.15s;
+        }
+        .fly-btn:hover { background: rgba(34,211,238,0.2); border-color: var(--accent2); }
+
+        /* map info strip */
+        .map-strip {
+            padding: 5px 10px;
+            background: var(--surface2); border-bottom: 1px solid var(--border);
+            font-size: 10px; color: var(--text-muted);
+            display: flex; align-items: center; justify-content: space-between;
+            flex-shrink: 0; gap: 8px;
+        }
+        .map-strip .iv { color: var(--accent2); font-weight: 600; }
+
+        /* Hidden inputs for drone config values (accessible everywhere) */
+        .cfg-inputs-hidden { display: none; }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <div class="logo-dot"></div>
+            <h1><span>RGB-Thermal</span> Drone Person Detection</h1>
+        </div>
+        <div class="status-chips">
+            <div class="chip" id="chipModel">
+                <div class="dot dot-red" id="dotModel"></div>
+                <span id="statusModel">Model: --</span>
+            </div>
+            <div class="chip" id="chipVideo">
+                <div class="dot dot-yellow" id="dotVideo"></div>
+                <span id="statusVideo">Video: --</span>
+            </div>
+            <div class="chip" id="chipThermal">
+                <div class="dot dot-red" id="dotThermal"></div>
+                <span id="statusThermal">T: off</span>
+            </div>
+            <div class="chip">
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                    <path d="M5 1v4l2.5 1.5" stroke="#8b949e" stroke-width="1.2" stroke-linecap="round"/>
+                    <circle cx="5" cy="5" r="4" stroke="#8b949e" stroke-width="1"/>
+                </svg>
+                <span id="statusFps">-- FPS</span>
+            </div>
+            <div class="chip" id="chipGsd">
+                <div class="dot dot-yellow" id="dotGsd"></div>
+                <span id="statusGsd">GSD: -- cm/px</span>
+            </div>
+            <div class="chip" id="chipTelem" style="display:none">
+                <div class="dot dot-red" id="dotTelem"></div>
+                <span id="statusTelem">ADB: --</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hidden config inputs (shared across panels) -->
+    <div class="cfg-inputs-hidden">
+        <input type="number" id="cfgLat"   value=""  step="0.00001">
+        <input type="number" id="cfgLon"   value="" step="0.00001">
+        <input type="number" id="cfgAlt"   value=""      step="0.5">
+        <input type="number" id="cfgYaw"   value=""      step="1">
+        <input type="number" id="cfgPitch" value="-90.0"     step="1">
+    </div>
+
+    <div class="main">
+
+        <!-- ══ PANEL 1: Video (top-left) ══ -->
+        <div class="panel" style="grid-column:1; grid-row:1;">
+            <div class="panel-header">
+                <span class="panel-title"><span id="videoPanelTitle">Live Feed</span> — <span id="overlayCount2">0 person(s)</span></span>
+                <div class="panel-actions">
+                    <span id="overlayFps" style="font-size:10px; color:var(--text-muted)">-- FPS</span>
+                </div>
+            </div>
+            <div class="video-wrapper">
+                <img id="videoStream" src="/video_feed" alt="Stream">
+                <div class="video-overlay">
+                    <div class="overlay-badge detect-count" id="overlayCount" style="display:none">0 person(s)</div>
+                </div>
+            </div>
+            <div class="upload-bar">
+                <label class="file-label" for="videoFile" style="flex:1;">
+                    <span>&#x1F4F9;</span>
+                    <span id="fileNameDisplay">RGB video...</span>
+                    <input type="file" id="videoFile" accept="video/*" onchange="onFileChange(this, 'fileNameDisplay')">
+                </label>
+                <label class="file-label" for="thermalFile" style="flex:1;border-color:rgba(248,113,113,0.3);">
+                    <span style="color:#f87171">&#x1F321;</span>
+                    <span id="thermalNameDisplay">Thermal video...</span>
+                    <input type="file" id="thermalFile" accept="video/*" onchange="onFileChange(this, 'thermalNameDisplay')">
+                </label>
+                <button class="btn btn-cyan" onclick="uploadVideo()">Upload</button>
+                <button class="btn btn-live" id="btnLive" onclick="toggleLivePanel()">LIVE</button>
+            </div>
+            <!-- Live mode config (hidden by default) -->
+            <div class="live-config" id="liveConfig">
+                <div class="live-tabs" style="width:100%">
+                    <button class="live-tab active" onclick="switchLiveTab('adb',this)">1. ADB</button>
+                    <button class="live-tab" onclick="switchLiveTab('capture',this)">2. Capture</button>
+                </div>
+                <!-- Tab 1: ADB pair + connect -->
+                <div class="live-tab-content active" id="liveTabAdb" style="flex-direction:column;gap:6px;">
+                    <div class="adb-row">
+                        <span class="adb-step-label">IP</span>
+                        <input type="text" id="adbIp" placeholder="192.168.1.x" value="">
+                    </div>
+                    <div class="adb-row">
+                        <span class="adb-step-label">Step 1</span>
+                        <input type="text" id="adbPairPort" placeholder="Pair port" style="width:80px">
+                        <input type="text" id="adbPairCode" placeholder="Pair code" style="width:80px">
+                        <button class="btn btn-ghost btn-sm" onclick="adbPair()">Pair</button>
+                    </div>
+                    <div class="adb-row">
+                        <span class="adb-step-label">Step 2</span>
+                        <input type="text" id="adbConnPort" placeholder="Port (xem WD)" style="width:90px" value="">
+                        <button class="btn btn-ghost btn-sm" onclick="adbConnect()">Connect</button>
+                        <button class="btn btn-ghost btn-sm" onclick="adbRefresh()">Refresh</button>
+                    </div>
+                    <div style="font-size:11px;color:var(--text-muted);padding:2px 4px;">Port = dòng "IP &amp; Port" trên Wireless Debugging (không phải port pair)</div>
+                    <div class="adb-devices" id="adbDeviceList">No devices</div>
+                </div>
+                <!-- Tab 2: ADB screen capture -->
+                <div class="live-tab-content" id="liveTabCapture" style="flex-direction:column;gap:6px;padding:8px 10px;">
+                    <!-- Device + scrcpy row -->
+                    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                        <span style="font-size:12px;color:var(--text-muted)">Device:</span>
+                        <span id="adbDeviceLabel" style="font-size:12px;color:var(--green);font-weight:600;flex:1;">--</span>
+                        <button class="btn btn-ghost btn-sm" onclick="adbRefresh()" title="Refresh">&#8635;</button>
+                    </div>
+                    <!-- scrcpy row: Start scrcpy (smooth 30fps) -->
+                    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;border:1px solid var(--border);border-radius:4px;padding:6px 8px;">
+                        <span style="font-size:11px;color:var(--text-muted);flex:1;">scrcpy (30fps, mượt hơn):</span>
+                        <button class="btn btn-ghost btn-sm" id="btnStartScrcpy" onclick="startScrcpy()">&#9654; Start scrcpy</button>
+                        <span id="scrcpyStatus" style="font-size:11px;color:var(--text-muted);">--</span>
+                    </div>
+                    <!-- Optional crop (0 = full screen) -->
+                    <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
+                        <span style="font-size:11px;color:var(--text-muted)">Crop (0=full):</span>
+                        <label style="font-size:11px;color:var(--text-muted)">X</label><input type="number" id="adbCropX" value="0" style="width:52px">
+                        <label style="font-size:11px;color:var(--text-muted)">Y</label><input type="number" id="adbCropY" value="0" style="width:52px">
+                        <label style="font-size:11px;color:var(--text-muted)">W</label><input type="number" id="adbCropW" value="0" style="width:52px">
+                        <label style="font-size:11px;color:var(--text-muted)">H</label><input type="number" id="adbCropH" value="0" style="width:52px">
+                    </div>
+                    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                        <button class="btn" id="btnStartLive" onclick="startLive()" style="font-size:13px;padding:6px 14px;">
+                            &#9654; Start Human Detection
+                        </button>
+                        <button class="btn btn-ghost" id="btnStopLive" onclick="stopLive()" style="display:none;font-size:13px;padding:6px 14px;">
+                            &#9646;&#9646; Stop Detection
+                        </button>
+                    </div>
+                    <!-- Telemetry mini-status (hien khi dang chay) -->
+                    <div id="adbTelemStatus" style="display:none;font-size:11px;color:var(--text-muted);line-height:1.8;border-top:1px solid var(--border);padding-top:6px;width:100%;">
+                        <div>GPS: <span id="stGps" style="color:var(--accent2)">--</span></div>
+                        <div>Alt: <span id="stAlt" style="color:var(--accent2)">--</span> &nbsp; Yaw: <span id="stYaw" style="color:var(--accent2)">--</span> &nbsp; Gimbal: <span id="stGimbal" style="color:var(--accent2)">--</span> &nbsp; Sats: <span id="stSats" style="color:var(--accent2)">--</span></div>
+                    </div>
+                    <!-- Hidden fallback inputs for scrcpy/mss mode -->
+                    <input type="number" id="liveCropX" value="0" style="display:none">
+                    <input type="number" id="liveCropY" value="0" style="display:none">
+                    <input type="number" id="liveCropW" value="1280" style="display:none">
+                    <input type="number" id="liveCropH" value="720" style="display:none">
+                    <input type="number" id="liveMonitor" value="1" style="display:none">
+                </div>
+            </div>
+            <!-- Telemetry bar (shown during live mode) -->
+            <div class="telem-bar" id="telemBar">
+                <span>ADB: <span class="telem-val" id="telemAdb">--</span></span>
+                <span>GPS: <span class="telem-val" id="telemGps">--</span></span>
+                <span>Alt: <span class="telem-val" id="telemAlt">--</span></span>
+                <span>Yaw: <span class="telem-val" id="telemYaw">--</span></span>
+                <span>Gimbal: <span class="telem-val" id="telemGimbal">--</span></span>
+                <span>Sats: <span class="telem-val" id="telemSats">--</span></span>
+            </div>
+            <div class="video-controls">
+                <button class="btn" id="btnPause" onclick="togglePause()" style="min-width:70px">&#9646;&#9646; Pause</button>
+                <div class="seek-track">
+                    <input type="range" class="seek-bar" id="seekBar" min="0" max="1000" value="0">
+                </div>
+                <span class="time-label" id="frameLabel">0%</span>
+            </div>
+        </div>
+
+        <!-- ══ PANEL 2: Detection list (bottom-left) ══ -->
+        <!-- ══ RIGHT COLUMN: Detections + Map tabs ══ -->
+        <div class="right-column">
+
+        <!-- Detections + History panel -->
+        <div class="panel" style="flex:0 0 45%;position:relative;display:flex;flex-direction:column;overflow:hidden">
+            <!-- Header: title + action buttons -->
+            <div class="panel-header">
+                <span class="panel-title" id="detPanelTitle">Detections — <span id="detCount">0</span> found</span>
+                <div class="panel-actions">
+                    <button class="fly-btn" onclick="flyToDrone()">Fly to Drone</button>
+                    <button class="fly-btn" onclick="toggleCfg()">&#9881; Config</button>
+                </div>
+            </div>
+
+            <!-- Inner tab bar: Detections | History -->
+            <div class="det-inner-tabs">
+                <button class="det-inner-tab active" id="tabBtnLive" onclick="switchDetTab('live',this)">Detections</button>
+                <button class="det-inner-tab" id="tabBtnHistory" onclick="switchDetTab('history',this)">
+                    History <span id="historyBadge" style="background:#e74c3c;color:#fff;border-radius:8px;padding:1px 6px;font-size:10px;margin-left:3px;display:none">0</span>
+                </button>
+            </div>
+
+            <!-- Config drawer (shared, visible in both tabs) -->
+            <div class="cfg-drawer hidden" id="cfgDrawer">
+                <div class="config-grid">
+                    <label>Lat</label>
+                    <input type="number" id="cfgLatVis" value="" step="0.00001" oninput="syncCfg('lat',this.value)" placeholder="--">
+                    <label>Lon</label>
+                    <input type="number" id="cfgLonVis" value="" step="0.00001" oninput="syncCfg('lon',this.value)" placeholder="--">
+                    <label>Alt (m)</label>
+                    <input type="number" id="cfgAltVis" value="" step="0.5" oninput="syncCfg('alt',this.value)" placeholder="--">
+                    <label>Yaw</label>
+                    <input type="number" id="cfgYawVis" value="" step="1" oninput="syncCfg('yaw',this.value)" placeholder="--">
+                    <label>Pitch</label>
+                    <input type="number" id="cfgPitchVis" value="-90.0" step="1" oninput="syncCfg('pitch',this.value)">
+                    <label></label><span style="font-size:9px;color:var(--text-muted)">pitch=-90 → nadir</span>
+                    <label>Conf</label>
+                    <div style="display:flex;align-items:center;gap:6px">
+                        <input type="range" id="cfgConfSlider" min="0.05" max="0.95" step="0.05" value="0.25"
+                               style="flex:1" oninput="document.getElementById('cfgConfVal').textContent=parseFloat(this.value).toFixed(2)">
+                        <span id="cfgConfVal" style="min-width:32px;font-size:12px">0.25</span>
+                    </div>
+                </div>
+                <div class="cfg-actions">
+                    <button class="btn btn-ghost btn-sm" onclick="applyConfig()">Apply</button>
+                </div>
+            </div>
+
+            <!-- Tab: Live detections -->
+            <div id="tabLive" class="det-tab-content active">
+                <div class="det-scroll" id="detList">
+                    <div class="no-det">Upload a video to start detection</div>
+                </div>
+            </div>
+
+            <!-- Tab: History -->
+            <div id="tabHistory" class="det-tab-content">
+                <div class="hist-header">
+                    <span><span id="historyCount">0</span> saved</span>
+                    <button class="btn btn-ghost btn-sm" onclick="clearHistory()">Clear all</button>
+                </div>
+                <div id="historyList" class="hist-scroll">
+                    <div class="no-det">No detections saved yet</div>
+                </div>
+            </div>
+
+            <!-- Snapshot popup overlay -->
+            <div id="snapshotPopup" style="display:none">
+                <div class="popup-header">
+                    <span>Detection #<span id="popupId"></span></span>
+                    <button class="popup-close" onclick="closePopup()">&times;</button>
+                </div>
+                <img id="popupImg" src="" alt="Snapshot">
+                <div class="popup-info">
+                    <div>Conf: <span id="popupConf"></span></div>
+                    <div>GPS: <span id="popupGps"></span></div>
+                    <div id="popupAgl" style="display:none">AGL: <span></span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Map + Coverage + Dashboard tabs -->
+        <div class="panel" style="flex:1;overflow:hidden;">
+            <div class="br-tabs">
+                <button class="br-tab active" data-br="br2dMap" onclick="switchBr(this)">2D Map</button>
+                <button class="br-tab" data-br="brCoverage" onclick="switchBr(this)">Coverage</button>
+                <button class="br-tab" data-br="brDashboard" onclick="switchBr(this)">Dashboard</button>
+            </div>
+
+            <!-- 2D Map -->
+            <div class="br-content active" id="br2dMap">
+                <div class="panel-header" style="background:var(--surface);">
+                    <span class="panel-title">Google Maps — <span id="gmapMode">Satellite</span></span>
+                    <div class="panel-actions">
+                        <button class="fly-btn" onclick="toggleMapType()" id="mapTypeBtn">Roadmap</button>
+                        <span style="font-size:10px;color:var(--text-muted)">Flags: <span id="gmapFlagCount" style="color:var(--accent2);font-weight:700">0</span></span>
+                        <button class="fly-btn" style="color:var(--red);border-color:rgba(248,113,113,0.3)" onclick="clearAllFlags()">Clear Flags</button>
+                    </div>
+                </div>
+                <div style="flex:1;overflow:hidden;">
+                    <div id="googleMap2d"></div>
+                </div>
+            </div>
+
+            <!-- Coverage heat map -->
+            <div class="br-content" id="brCoverage">
+                <div class="panel-header" style="background:var(--surface);">
+                    <span class="panel-title">Coverage — <span id="coverageTotal">0</span> detections</span>
+                </div>
+                <div class="heat-container">
+                    <div id="leafletMap"></div>
+                    <div class="heat-legend">
+                        <div class="heat-legend-title">Detection Density</div>
+                        <div class="heat-legend-bar"></div>
+                        <div class="heat-legend-labels">
+                            <span>Low</span><span>Med</span><span>High</span>
+                        </div>
+                        <div class="heat-legend-rows">
+                            <div class="heat-legend-row">
+                                <div class="heat-dot" style="background:#3b82f6"></div>
+                                <span>Sparse (&lt;20%)</span>
+                            </div>
+                            <div class="heat-legend-row">
+                                <div class="heat-dot" style="background:#22d3ee"></div>
+                                <span>Low (20–40%)</span>
+                            </div>
+                            <div class="heat-legend-row">
+                                <div class="heat-dot" style="background:#34d399"></div>
+                                <span>Medium (40–60%)</span>
+                            </div>
+                            <div class="heat-legend-row">
+                                <div class="heat-dot" style="background:#fbbf24"></div>
+                                <span>High (60–80%)</span>
+                            </div>
+                            <div class="heat-legend-row">
+                                <div class="heat-dot" style="background:#f87171"></div>
+                                <span>Dense (&gt;80%)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dashboard -->
+            <div class="br-content" id="brDashboard">
+                <div class="panel-header" style="background:var(--surface);">
+                    <span class="panel-title">Detection Timeline</span>
+                    <div class="panel-actions" style="gap:8px;">
+                        <span style="font-size:10px;color:var(--text-muted)">
+                            Total: <span id="dashTotal" style="color:var(--accent2);font-weight:700">0</span>
+                            | Peak: <span id="dashMax" style="color:var(--red);font-weight:700">0</span>
+                        </span>
+                        <select id="dashSmooth" onchange="updateDashboard()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:10px;padding:2px 4px;">
+                            <option value="5">SMA-5</option>
+                            <option value="10" selected>SMA-10</option>
+                            <option value="20">SMA-20</option>
+                            <option value="1">Raw</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="flex:1; position:relative; overflow:hidden; background:var(--bg);">
+                    <canvas id="dashCanvas" style="width:100%;height:100%;cursor:crosshair;"></canvas>
+                    <div id="dashTooltip" style="display:none;position:absolute;background:rgba(17,24,39,0.95);border:1px solid var(--accent2);border-radius:6px;padding:6px 10px;font-size:10px;color:var(--text);pointer-events:none;z-index:100;white-space:nowrap;"></div>
+                </div>
+                <div style="display:flex;gap:10px;padding:4px 10px;background:var(--surface2);border-top:1px solid var(--border);font-size:9px;color:var(--text-muted);align-items:center;">
+                    <span style="display:flex;align-items:center;gap:3px;"><span style="width:8px;height:8px;border-radius:50%;background:#22d3ee;"></span> 0-2 Normal</span>
+                    <span style="display:flex;align-items:center;gap:3px;"><span style="width:8px;height:8px;border-radius:50%;background:#fbbf24;"></span> 3-5 Attention</span>
+                    <span style="display:flex;align-items:center;gap:3px;"><span style="width:8px;height:8px;border-radius:50%;background:#f87171;"></span> &gt;5 Alert</span>
+                    <span style="margin-left:auto;color:var(--accent-h);">Click chart to seek video</span>
+                </div>
+            </div>
+        </div>
+
+        </div><!-- /.right-column -->
+
+    </div><!-- /.main -->
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        let isPaused = false;
+        let isSeeking = false;
+        let _gsdCurrent = null;  // luu GSD hien tai cho detection details
+        let isLiveMode = false;
+        let telemInterval = null;
+
+        // ── Live mode ──
+        function toggleLivePanel() {
+            const panel = document.getElementById('liveConfig');
+            panel.classList.toggle('show');
+        }
+
+        function switchLiveTab(tabName, btn) {
+            document.querySelectorAll('.live-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.live-tab-content').forEach(c => c.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById(tabName === 'adb' ? 'liveTabAdb' : 'liveTabCapture').classList.add('active');
+        }
+
+        async function adbPair() {
+            const ip = document.getElementById('adbIp').value.trim();
+            const port = document.getElementById('adbPairPort').value.trim();
+            const code = document.getElementById('adbPairCode').value.trim();
+            if (!ip || !port || !code) { showToast('Fill IP, pair port, and pair code', 'error'); return; }
+            try {
+                const resp = await fetch('/adb_pair', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ ip, port: parseInt(port), code }),
+                });
+                const data = await resp.json();
+                if (data.ok) {
+                    showToast('Paired successfully', 'success');
+                    adbRefresh();
+                } else {
+                    const msg = data.output || data.error || data.detail || 'unknown error';
+                    showToast('Pair failed: ' + msg, 'error');
+                }
+            } catch (e) { showToast('Pair error: ' + e.message, 'error'); }
+        }
+
+        let _adbDevice = null;  // serial string "ip:port" cua device dang ket noi
+
+        async function adbConnect() {
+            const ip = document.getElementById('adbIp').value.trim();
+            const port = document.getElementById('adbConnPort').value.trim();
+            if (!ip || !port) { showToast('Fill IP and connect port', 'error'); return; }
+            try {
+                const resp = await fetch('/adb_connect', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ ip, port: parseInt(port) }),
+                });
+                const data = await resp.json();
+                if (data.ok) {
+                    showToast('Connected to ' + ip + ':' + port, 'success');
+                } else {
+                    showToast('Connect: ' + (data.output || data.detail || 'failed'), 'error');
+                }
+                // Refresh regardless — device may already be connected from pair
+                await adbRefresh();
+            } catch (e) { showToast('Connect error: ' + e.message, 'error'); }
+        }
+
+        async function adbRefresh() {
+            const el = document.getElementById('adbDeviceList');
+            try {
+                const resp = await fetch('/adb_status');
+                const data = await resp.json();
+                if (data.devices && data.devices.length > 0) {
+                    _adbDevice = data.devices[0].serial;
+                    el.innerHTML = data.devices.map(d =>
+                        `<span style="color:var(--green)">${d.serial}</span> <span style="color:var(--text-muted);font-size:9px">${d.state}</span>`
+                    ).join('<br>');
+                    // Auto switch to Capture tab + start preview worker + load preview
+                    const captureBtn = document.querySelector('.live-tab:nth-child(2)');
+                    if (captureBtn) switchLiveTab('capture', captureBtn);
+                    await fetch('/adb_preview_start', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ device_serial: _adbDevice }),
+                    });
+                    _loadAdbPreview();
+                } else {
+                    _adbDevice = null;
+                    el.textContent = 'No devices';
+                    _clearAdbPreview();
+                }
+            } catch (e) { el.textContent = 'Error: ' + e.message; }
+        }
+
+        function _loadAdbPreview() {
+            // Stream thang vao main video panel
+            document.getElementById('videoStream').src = '/adb_screen_feed?' + Date.now();
+            document.getElementById('videoPanelTitle').textContent = 'Phone Screen';
+            document.getElementById('adbDeviceLabel').textContent = _adbDevice || '';
+        }
+
+        function _clearAdbPreview() {
+            fetch('/adb_preview_stop', { method: 'POST' }).catch(() => {});
+            document.getElementById('adbDeviceLabel').textContent = '';
+            // Neu khong dang live inference, hien placeholder
+            if (!isLiveMode) {
+                document.getElementById('videoStream').src = '/video_feed';
+                document.getElementById('videoPanelTitle').textContent = 'Live Feed';
+            }
+        }
+
+        let _detectedHwnd = null;
+
+        async function startScrcpy() {
+            const btn = document.getElementById('btnStartScrcpy');
+            const st  = document.getElementById('scrcpyStatus');
+            btn.disabled = true;
+            st.textContent = 'starting...';
+            st.style.color = 'var(--text-muted)';
+            try {
+                const resp = await fetch('/start_scrcpy', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ device_serial: _adbDevice || '' }),
+                });
+                const data = await resp.json();
+                if (data.ok) {
+                    st.textContent = data.msg === 'already running' ? 'restarting...' : 'running';
+                    st.style.color = 'var(--green)';
+                    // Auto-detect window sau 2s cho scrcpy khoi dong
+                    setTimeout(async () => {
+                        await detectScrcpy();
+                        if (_detectedHwnd) {
+                            await fetch('/scrcpy_preview_start', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({ hwnd: _detectedHwnd }),
+                            });
+                            document.getElementById('videoStream').src = '/adb_screen_feed?' + Date.now();
+                            document.getElementById('videoPanelTitle').textContent = 'Phone Screen (scrcpy)';
+                            st.textContent = 'running';
+                        } else {
+                            st.textContent = 'window not found';
+                            st.style.color = 'var(--red)';
+                        }
+                        btn.disabled = false;  // luon re-enable de user co the restart
+                    }, 2000);
+                } else {
+                    st.textContent = data.error || 'failed';
+                    st.style.color = 'var(--red)';
+                    btn.disabled = false;
+                }
+            } catch (e) {
+                st.textContent = e.message;
+                st.style.color = 'var(--red)';
+                btn.disabled = false;
+            }
+        }
+        let _detectedWindowTitle = '';
+
+        async function detectScrcpy() {
+            try {
+                const resp = await fetch('/detect_scrcpy');
+                const data = await resp.json();
+                if (!data.found || data.windows.length === 0) {
+                    showToast(data.error || 'Scrcpy not found. Start scrcpy first.', 'error');
+                    return;
+                }
+                const w = data.windows[0];
+                _detectedHwnd = w.hwnd;
+                _detectedWindowTitle = w.title;
+                document.getElementById('liveCropW').value = w.w;
+                document.getElementById('liveCropH').value = w.h;
+                // Show "background capture" indicator
+                const infoEl = document.getElementById('detectedWindowInfo');
+                if (infoEl) infoEl.textContent = w.title + ' (' + w.w + 'x' + w.h + ') — background capture';
+                showToast('Detected: ' + w.title + ' [background capture enabled]', 'success');
+            } catch (e) { showToast('Detection failed: ' + e.message, 'error'); }
+        }
+
+        async function startLive() {
+            let body;
+            // Priority: scrcpy HWND (fast) > ADB device (screencap) > mss fallback
+            if (_detectedHwnd) {
+                body = {
+                    hwnd: _detectedHwnd,
+                    w: parseInt(document.getElementById('liveCropW').value) || 1280,
+                    h: parseInt(document.getElementById('liveCropH').value) || 720,
+                };
+            } else if (_adbDevice) {
+                const cx = parseInt(document.getElementById('adbCropX').value) || 0;
+                const cy = parseInt(document.getElementById('adbCropY').value) || 0;
+                const cw = parseInt(document.getElementById('adbCropW').value) || 0;
+                const ch = parseInt(document.getElementById('adbCropH').value) || 0;
+                body = {
+                    adb_device: _adbDevice,
+                    crop: (cw > 0 && ch > 0) ? { x: cx, y: cy, w: cw, h: ch } : null,
+                };
+            } else {
+                body = {
+                    monitor: parseInt(document.getElementById('liveMonitor').value) || 1,
+                    crop: {
+                        x: parseInt(document.getElementById('liveCropX').value) || 0,
+                        y: parseInt(document.getElementById('liveCropY').value) || 0,
+                        w: parseInt(document.getElementById('liveCropW').value) || 1280,
+                        h: parseInt(document.getElementById('liveCropH').value) || 720,
+                    },
+                };
+            }
+            try {
+                const resp = await fetch('/start_live', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body),
+                });
+                const data = await resp.json();
+                if (data.status === 'ok') {
+                    isLiveMode = true;
+                    document.getElementById('videoStream').src = '/video_feed?' + Date.now();
+                    document.getElementById('videoPanelTitle').textContent = 'Live Feed';
+                    document.getElementById('btnLive').classList.add('active');
+                    document.getElementById('btnStartLive').style.display = 'none';
+                    document.getElementById('btnStopLive').style.display = '';
+                    document.getElementById('adbTelemStatus').style.display = _adbDevice ? '' : 'none';
+                    document.getElementById('telemBar').classList.add('show');
+                    // Thermal chip — live mode auto-generates thermal
+                    document.getElementById('dotThermal').className = 'dot dot-green';
+                    document.getElementById('statusThermal').textContent = 'T: auto';
+                    // Show telemetry chip
+                    document.getElementById('chipTelem').style.display = '';
+                    // Start telemetry polling
+                    if (telemInterval) clearInterval(telemInterval);
+                    telemInterval = setInterval(pollTelemetry, 2000);
+                    pollTelemetry();  // poll immediately
+                    showToast('Live mode started — screen capture + ADB telemetry', 'success');
+                }
+            } catch (e) { showToast('Live start failed: ' + e.message, 'error'); }
+        }
+
+        async function stopLive() {
+            try {
+                await fetch('/stop_live', { method: 'POST' });
+            } catch (e) { /* ignore */ }
+            isLiveMode = false;
+            document.getElementById('btnLive').classList.remove('active');
+            document.getElementById('btnStartLive').style.display = '';
+            document.getElementById('btnStopLive').style.display = 'none';
+            document.getElementById('telemBar').classList.remove('show');
+            document.getElementById('dotThermal').className = 'dot dot-red';
+            document.getElementById('statusThermal').textContent = 'T: off';
+            document.getElementById('chipTelem').style.display = 'none';
+            document.getElementById('adbTelemStatus').style.display = 'none';
+            if (telemInterval) { clearInterval(telemInterval); telemInterval = null; }
+            // Quay ve man hinh dien thoai neu ADB van connected
+            if (_adbDevice) {
+                document.getElementById('videoStream').src = '/adb_screen_feed?' + Date.now();
+                document.getElementById('videoPanelTitle').textContent = 'Phone Screen';
+            }
+            showToast('Live mode stopped', 'success');
+        }
+
+        async function pollTelemetry() {
+            try {
+                const resp = await fetch('/telemetry');
+                const t = await resp.json();
+                const adbEl = document.getElementById('telemAdb');
+                document.getElementById('dotTelem').className = t.connected ? 'dot dot-green' : 'dot dot-red';
+                document.getElementById('statusTelem').textContent = t.connected ? 'ADB: OK' : 'ADB: N/A';
+                if (t.connected) {
+                    adbEl.textContent = 'OK';
+                    adbEl.style.color = 'var(--green)';
+                } else {
+                    adbEl.textContent = 'N/A';
+                    adbEl.style.color = 'var(--red)';
+                }
+                if (t.data) {
+                    const d = t.data;
+                    const gpsStr = d.lat.toFixed(5) + ', ' + d.lon.toFixed(5);
+                    const altStr = d.height.toFixed(1) + 'm';
+                    const yawStr = d.yaw.toFixed(1) + '\u00B0';
+                    const gimbalStr = d.gimbal_pitch.toFixed(1) + '\u00B0';
+                    // Telem bar (bottom)
+                    document.getElementById('telemGps').textContent = gpsStr;
+                    document.getElementById('telemAlt').textContent = altStr;
+                    document.getElementById('telemYaw').textContent = yawStr;
+                    document.getElementById('telemGimbal').textContent = gimbalStr;
+                    document.getElementById('telemSats').textContent = d.gpsNum;
+                    // Mini-status in Capture tab
+                    const ms = document.getElementById('adbTelemStatus');
+                    if (ms && ms.style.display !== 'none') {
+                        document.getElementById('stGps').textContent = gpsStr;
+                        document.getElementById('stAlt').textContent = altStr;
+                        document.getElementById('stYaw').textContent = yawStr;
+                        document.getElementById('stGimbal').textContent = gimbalStr;
+                        document.getElementById('stSats').textContent = d.gpsNum;
+                    }
+                    // Auto-update config inputs
+                    document.getElementById('cfgLat').value = d.lat.toFixed(5);
+                    document.getElementById('cfgLon').value = d.lon.toFixed(5);
+                    document.getElementById('cfgAlt').value = d.height.toFixed(1);
+                    document.getElementById('cfgYaw').value = d.yaw.toFixed(1);
+                    document.getElementById('cfgPitch').value = d.gimbal_pitch.toFixed(1);
+                    // Sync visible config inputs
+                    if (document.getElementById('cfgLatVis')) {
+                        document.getElementById('cfgLatVis').value = d.lat.toFixed(5);
+                        document.getElementById('cfgLonVis').value = d.lon.toFixed(5);
+                        document.getElementById('cfgAltVis').value = d.height.toFixed(1);
+                    }
+                }
+            } catch (e) { /* ignore network errors */ }
+        }
+
+        // ── Toast ──
+        function showToast(msg, type = '') {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast show' + (type ? ' ' + type : '');
+            clearTimeout(t._timer);
+            t._timer = setTimeout(() => { t.className = 'toast'; }, 2500);
+        }
+
+        // ── File input ──
+        function onFileChange(input, displayId) {
+            const el = document.getElementById(displayId || 'fileNameDisplay');
+            el.textContent = input.files.length ? input.files[0].name : (displayId === 'thermalNameDisplay' ? 'Thermal video...' : 'RGB video...');
+        }
+
+        // ── Config drawer ──
+        let _cfgOpen = false;
+        function toggleCfg() {
+            _cfgOpen = !_cfgOpen;
+            document.getElementById('cfgDrawer').classList.toggle('hidden', !_cfgOpen);
+        }
+
+        // ── Detection inner tabs (Detections | History) ──
+        let _activeDetTab = 'live';
+        let _historyKnown = 0;
+
+        function switchDetTab(tab, btn) {
+            _activeDetTab = tab;
+            document.querySelectorAll('.det-inner-tab').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.det-tab-content').forEach(c => c.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById(tab === 'live' ? 'tabLive' : 'tabHistory').classList.add('active');
+            const title = document.getElementById('detPanelTitle');
+            if (tab === 'live') {
+                title.innerHTML = 'Detections — <span id="detCount">0</span> found';
+                _syncDetCount(window._lastDetCount || 0);
+            } else {
+                title.textContent = 'Detection History';
+                fetchHistory();
+            }
+        }
+        function _syncDetCount(n) {
+            const el = document.getElementById('detCount');
+            if (el) el.textContent = n;
+        }
+
+        // ── History ──
+        async function fetchHistory() {
+            try {
+                const resp = await fetch('/detection_saves');
+                const data = await resp.json();
+                renderHistory(data.saves);
+                _historyKnown = data.total;
+                _updateHistBadge(data.total);
+                document.getElementById('historyCount').textContent = data.total;
+            } catch (e) {}
+        }
+
+        function _updateHistBadge(n) {
+            const badge = document.getElementById('historyBadge');
+            badge.textContent = n;
+            badge.style.display = n > 0 ? 'inline' : 'none';
+        }
+
+        function renderHistory(saves) {
+            const list = document.getElementById('historyList');
+            if (!saves || saves.length === 0) {
+                list.innerHTML = '<div class="no-det">No detections saved yet</div>';
+                return;
+            }
+            list.innerHTML = saves.slice().reverse().map(s => {
+                const ts = new Date(s.timestamp * 1000);
+                const timeStr = ts.toLocaleTimeString();
+                const hasGps = s.lat != null && s.lon != null;
+                const gpsStr = hasGps
+                    ? `<a href="https://www.google.com/maps/search/?api=1&query=${s.lat.toFixed(6)},${s.lon.toFixed(6)}"
+                          target="_blank" style="color:var(--accent2)">${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}</a>`
+                    : 'GPS: N/A';
+                const flagId = 10000 + s.id;
+                const isFlagged = localFlags.some(f => f.id === flagId);
+                return `<div class="hist-card" id="histCard${s.id}">
+                    <img class="hist-thumb" src="/detection_save_img/${s.id}" alt="det#${s.id}"
+                         onclick="showHistImg(${s.id},${s.conf.toFixed(2)},'${gpsStr.replace(/'/g,"\\'")}')">
+                    <div class="hist-info">
+                        <div class="hi-row hi-conf">#${s.id}&nbsp;&nbsp;conf ${s.conf.toFixed(2)}</div>
+                        <div class="hi-row hi-gps">${gpsStr}</div>
+                        <div class="hi-row hi-time">${timeStr}</div>
+                    </div>
+                    <button class="hist-flag-btn${isFlagged?' flagged':''}" id="hflag${s.id}"
+                            title="${hasGps?'Flag on map':'No GPS — flag without map pin'}"
+                            onclick="flagFromHistory(${s.id},${s.lat},${s.lon},${s.conf.toFixed(3)},${JSON.stringify(s.bbox)})">&#9873;</button>
+                </div>`;
+            }).join('');
+        }
+
+        function showHistImg(saveId, conf, gpsHtml) {
+            document.getElementById('popupId').textContent = 'H' + saveId;
+            document.getElementById('popupConf').textContent = conf;
+            document.getElementById('popupImg').src = '/detection_save_img/' + saveId;
+            document.getElementById('popupGps').innerHTML = gpsHtml || 'N/A';
+            document.getElementById('snapshotPopup').style.display = 'flex';
+        }
+
+        function flagFromHistory(saveId, lat, lon, conf, bbox) {
+            const flagId = 10000 + saveId;
+            const btn = document.getElementById('hflag' + saveId);
+            const existing = localFlags.findIndex(f => f.id === flagId);
+            if (existing >= 0) {
+                deleteFlag(flagId);
+                if (btn) btn.classList.remove('flagged');
+                return;
+            }
+            const flag = { lat: lat || 0, lon: lon || 0, conf, id: flagId, bbox, frame: 0, timestamp: Date.now()/1000 };
+            localFlags.push(flag);
+            if (lat && lon) {
+                addGmapFlag(flag);
+                flyToGmap(lat, lon);
+                document.getElementById('gmapFlagCount').textContent = localFlags.length;
+            }
+            fetch('/flag_detection', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(flag) }).catch(()=>{});
+            if (btn) btn.classList.add('flagged');
+            showToast(lat ? `Flagged H${saveId} on map` : `Flagged H${saveId} (no GPS)`, 'success');
+        }
+
+        async function clearHistory() {
+            await fetch('/detection_saves', {method: 'DELETE'});
+            _historyKnown = 0;
+            _updateHistBadge(0);
+            document.getElementById('historyCount').textContent = '0';
+            renderHistory([]);
+        }
+        function syncCfg(field, val) {
+            const map = { lat:'cfgLat', lon:'cfgLon', alt:'cfgAlt', yaw:'cfgYaw', pitch:'cfgPitch' };
+            document.getElementById(map[field]).value = val;
+        }
+
+        // ── Bottom-right tab switching ──
+        function switchBr(btn) {
+            document.querySelectorAll('.br-tab').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.br-content').forEach(c => c.classList.remove('active'));
+            btn.classList.add('active');
+            const id = btn.getAttribute('data-br');
+            document.getElementById(id).classList.add('active');
+            if (id === 'brCoverage') {
+                initLeaflet();
+                updateHeatMap();
+            } else if (id === 'br2dMap') {
+                initGoogleMap2d();
+            } else if (id === 'brDashboard') {
+                updateDashboard();
+            }
+        }
+
+        // ── Confidence color ──
+        function confColor(c) {
+            if (c >= 0.7) return '#3fb950';
+            if (c >= 0.5) return '#d29922';
+            return '#f85149';
+        }
+
+        // ── Detection list (with thumbnails) ──
+        function updateDetections(dets, gsd) {
+            window._lastDetCount = dets.length;
+            const list  = document.getElementById('detList');
+            const count = document.getElementById('detCount');
+            const overlayCount  = document.getElementById('overlayCount');
+            const overlayCount2 = document.getElementById('overlayCount2');
+
+            if (count) count.textContent = dets.length;
+            overlayCount.textContent  = dets.length + ' person(s)';
+            overlayCount2.textContent = dets.length + ' person(s)';
+            overlayCount.style.display = dets.length > 0 ? '' : 'none';
+
+            if (dets.length === 0) {
+                list.innerHTML = '<div class="no-det">No detections in current frame</div>';
+                return;
+            }
+
+            // Lay AGL tu cfgAlt
+            const agl = parseFloat(document.getElementById('cfgAlt').value) || 0;
+            const fovH = 84.0;   // default hfov (degrees) — co the lay tu config
+            const imgW = 640; const imgH = 640;
+
+            let html = '';
+            for (const d of dets) {
+                const gps   = d.lat != null ? `${d.lat.toFixed(5)}, ${d.lon.toFixed(5)}` : 'N/A';
+                const pct   = Math.round(d.conf * 100);
+                const color = confColor(d.conf);
+                const bbox  = d.bbox ? JSON.stringify(d.bbox) : 'null';
+
+                // Thumb: neu co bbox thi load tu /detection_snapshot
+                let thumbHtml;
+                if (d.bbox) {
+                    const [x1,y1,x2,y2] = d.bbox.map(Math.round);
+                    thumbHtml = `<img class="det-thumb" src="/detection_snapshot?x1=${x1}&y1=${y1}&x2=${x2}&y2=${y2}" alt="#${d.id}" loading="lazy" onclick="openLightbox(this.src);event.stopPropagation()">`;
+                } else {
+                    thumbHtml = `<div class="det-thumb-placeholder">?</div>`;
+                }
+
+                const gsdStr = gsd != null ? gsd.toFixed(2) + ' cm/px' : '--';
+                const sizeStr = d.bbox ? `${Math.round(d.bbox[2]-d.bbox[0])}×${Math.round(d.bbox[3]-d.bbox[1])} px` : '--';
+
+                const flyBtn = '';
+                const mapBtn = d.lat != null
+                    ? `<button class="det-btn map" onclick="flyToGmap(${d.lat},${d.lon});showSnapshotPopup({lat:${d.lat},lon:${d.lon},conf:${d.conf},id:${d.id},bbox:${bbox}});event.stopPropagation()">Map</button>` : '';
+                const flagOnclick = d.lat != null
+                    ? `manualFlag(${d.lat},${d.lon},${d.conf},${d.id},${bbox})`
+                    : `showToast('No GPS — cannot flag','error')`;
+                const isFlagged = localFlags.some(f => f.id === d.id) ? ' flagged' : '';
+
+                html += `
+                <div class="det-card" onclick="onDetCardClick(${d.lat ?? 'null'},${d.lon ?? 'null'},${d.conf},${d.id},${bbox})">
+                    ${thumbHtml}
+                    <div class="det-body">
+                        <div class="det-top-row">
+                            <span class="det-id">#${d.id}</span>
+                            <div class="conf-bar-bg"><div class="conf-bar" style="width:${pct}%;background:${color}"></div></div>
+                            <span class="conf-val">${d.conf.toFixed(2)}</span>
+                        </div>
+                        <div class="det-gps">${gps}</div>
+                        <div class="det-meta">
+                            <span><span class="lbl">AGL</span> ${agl.toFixed(1)} m</span>
+                            <span><span class="lbl">GSD</span> ${gsdStr}</span>
+                            <span><span class="lbl">FOV</span> ${fovH}°</span>
+                            <span><span class="lbl">Size</span> ${sizeStr}</span>
+                        </div>
+                        <div class="det-actions">${flyBtn}${mapBtn}</div>
+                    </div>
+                    <div class="det-flag-right${isFlagged}" onclick="${flagOnclick};event.stopPropagation()" title="Flag on map">&#9873;</div>
+                </div>`;
+            }
+            list.innerHTML = html;
+        }
+
+        // ── Status ──
+        function updateStatus(data) {
+            const dotModel = document.getElementById('dotModel');
+            const dotVideo = document.getElementById('dotVideo');
+            const chipModel = document.getElementById('chipModel');
+            const chipVideo = document.getElementById('chipVideo');
+
+            if (data.model_loaded) {
+                dotModel.className = 'dot dot-green';
+                chipModel.classList.add('active');
+                document.getElementById('statusModel').textContent = 'Model: Ready';
+            } else {
+                dotModel.className = 'dot dot-red';
+                chipModel.classList.remove('active');
+                document.getElementById('statusModel').textContent = 'Model: --';
+            }
+
+            const fpsStr = (data.fps || 0) + ' FPS';
+            document.getElementById('statusFps').textContent = fpsStr;
+            document.getElementById('overlayFps').textContent = fpsStr;
+
+            if (data.paused) {
+                dotVideo.className = 'dot dot-yellow';
+                document.getElementById('statusVideo').textContent = 'Video: Paused';
+                chipVideo.classList.remove('active');
+            } else if (data.video_loaded) {
+                dotVideo.className = 'dot dot-green';
+                document.getElementById('statusVideo').textContent = 'Video: Playing';
+                chipVideo.classList.add('active');
+            } else {
+                dotVideo.className = 'dot dot-yellow';
+                document.getElementById('statusVideo').textContent = 'Video: --';
+                chipVideo.classList.remove('active');
+            }
+        }
+
+        // ── GSD ──
+        function updateGsd(gsd) {
+            _gsdCurrent = gsd;
+            const el  = document.getElementById('statusGsd');
+            const dot = document.getElementById('dotGsd');
+            if (gsd == null) { el.textContent = 'GSD: -- cm/px'; dot.className = 'dot dot-yellow'; return; }
+            el.textContent = `GSD: ${gsd.toFixed(2)} cm/px`;
+            dot.className = gsd < 2 ? 'dot dot-green' : gsd < 4 ? 'dot dot-yellow' : 'dot dot-red';
+        }
+
+        // ── Pause/Resume ──
+        async function togglePause() {
+            const btn = document.getElementById('btnPause');
+            if (isPaused) {
+                await fetch('/resume', { method: 'POST' });
+                btn.innerHTML = '&#9646;&#9646; Pause';
+                isPaused = false;
+            } else {
+                await fetch('/pause', { method: 'POST' });
+                btn.innerHTML = '&#9654; Resume';
+                isPaused = true;
+            }
+        }
+
+        // ── Seek ──
+        const seekBar = document.getElementById('seekBar');
+        seekBar.addEventListener('mousedown',  () => { isSeeking = true; });
+        seekBar.addEventListener('touchstart', () => { isSeeking = true; }, { passive: true });
+        seekBar.addEventListener('change', async () => {
+            const ratio = seekBar.value / 1000;
+            await fetch('/seek', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ratio}) });
+            document.getElementById('frameLabel').textContent = Math.round(ratio * 100) + '%';
+            isSeeking = false;
+        });
+        seekBar.addEventListener('mouseup',  () => { isSeeking = false; });
+        seekBar.addEventListener('touchend', () => { isSeeking = false; });
+
+        // ── Upload ──
+        async function uploadVideo() {
+            const input = document.getElementById('videoFile');
+            const thermalInput = document.getElementById('thermalFile');
+            if (!input.files.length) { showToast('Please select an RGB video', 'error'); return; }
+            if (!thermalInput.files.length) { showToast('Please select a Thermal video', 'error'); return; }
+            const btn = document.querySelector('.btn-cyan');
+            btn.disabled = true; btn.textContent = 'Uploading...';
+            const formData = new FormData();
+            formData.append('file', input.files[0]);
+            formData.append('thermal_file', thermalInput.files[0]);
+            try {
+                const resp = await fetch('/upload_video', { method: 'POST', body: formData });
+                const data = await resp.json();
+                if (data.status === 'ok') {
+                    document.getElementById('videoStream').src = '/video_feed?' + Date.now();
+                    isPaused = false;
+                    document.getElementById('btnPause').innerHTML = '&#9646;&#9646; Pause';
+                    // Clear old session flags/markers
+                    localFlags.length = 0;
+                    if (_markerClusterGroup) _markerClusterGroup.clearLayers();
+                    for (const m of gmapFlagMarkers) m.remove();
+                    gmapFlagMarkers.length = 0;
+                    document.getElementById('gmapFlagCount').textContent = '0';
+                    // Update thermal status chip
+                    document.getElementById('dotThermal').className = 'dot dot-green';
+                    document.getElementById('statusThermal').textContent = 'T: on';
+                    showToast('RGBT Fusion: ' + data.filename + ' + ' + data.thermal_filename, 'success');
+                }
+            } catch (e) { showToast('Upload failed: ' + e.message, 'error'); }
+            finally { btn.disabled = false; btn.textContent = 'Upload'; }
+        }
+
+        // ── Drone config ──
+        async function applyConfig() {
+            const config = {
+                lat:   parseFloat(document.getElementById('cfgLat').value),
+                lon:   parseFloat(document.getElementById('cfgLon').value),
+                alt:   parseFloat(document.getElementById('cfgAlt').value),
+                yaw:   parseFloat(document.getElementById('cfgYaw').value),
+                pitch: parseFloat(document.getElementById('cfgPitch').value),
+            };
+            const conf = parseFloat(document.getElementById('cfgConfSlider').value);
+            try {
+                const [r1, r2] = await Promise.all([
+                    fetch('/drone_config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(config)}),
+                    fetch('/set_conf',     {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({conf})}),
+                ]);
+                if (r1.ok && r2.ok) showToast(`Config updated (conf=${conf.toFixed(2)})`, 'success');
+            } catch (e) { showToast('Config update failed', 'error'); }
+        }
+
+        // ── Main poll (500ms) — throttle map update ──
+        let _lastMapLat = 0, _lastMapLon = 0;
+        setInterval(async () => {
+            try {
+                const resp = await fetch('/detections');
+                const data = await resp.json();
+                updateDetections(data.detections, data.gsd);
+                updateStatus(data);
+                updateGsd(data.gsd);
+                if (!isSeeking && data.total_frames > 0) {
+                    document.getElementById('seekBar').value = Math.round(data.progress * 1000);
+                    document.getElementById('frameLabel').textContent = Math.round(data.progress * 100) + '%';
+                    document.getElementById('frameLabel').dataset.total = data.total_frames;
+                }
+                // Only show drone on map when actively processing (video loaded OR live mode)
+                const isActive = data.video_loaded || isLiveMode;
+                if (gmap2d && isActive && _hasGps()) {
+                    const lat = parseFloat(document.getElementById('cfgLat').value) || 0;
+                    const lon = parseFloat(document.getElementById('cfgLon').value) || 0;
+                    const moved = Math.abs(lat-_lastMapLat) > 0.000005 || Math.abs(lon-_lastMapLon) > 0.000005;
+                    if (moved) _lastMapLat=lat, _lastMapLon=lon;
+                    updateGmap2d(data.detections);
+                } else if (!isActive && gmapDroneMarker) {
+                    // Hide drone marker when no active session
+                    gmapDroneMarker.remove();
+                    gmapDroneMarker = null;
+                }
+            } catch (e) {}
+        }, 500);
+
+        // Poll heat map + dashboard + history badge (3s)
+        setInterval(async () => {
+            const covActive = document.getElementById('brCoverage').classList.contains('active');
+            const dashActive = document.getElementById('brDashboard').classList.contains('active');
+            if (covActive && leafletMap) updateHeatMap();
+            if (dashActive) updateDashboard();
+            // Update history badge + content
+            try {
+                const r = await fetch('/detection_saves');
+                const d = await r.json();
+                _updateHistBadge(d.total);
+                document.getElementById('historyCount').textContent = d.total;
+                if (_activeDetTab === 'history' && d.total !== _historyKnown) {
+                    _historyKnown = d.total;
+                    renderHistory(d.saves);
+                }
+            } catch (e) {}
+        }, 3000);
+
+        // ── Flags ──
+        let localFlags = [];
+
+        function flyToDrone() {
+            if (!_hasGps()) { showToast('No GPS data yet', 'error'); return; }
+            const lat = parseFloat(document.getElementById('cfgLat').value);
+            const lon = parseFloat(document.getElementById('cfgLon').value);
+            flyToGmap(lat, lon);
+        }
+
+        // ── Flag system ──
+        function haversineDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371000;
+            const dLat = (lat2-lat1)*Math.PI/180, dLon = (lon2-lon1)*Math.PI/180;
+            const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+            return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+        }
+
+        async function autoFlagDetections(dets) {
+            for (const d of dets) {
+                if (d.lat == null) continue;
+                if (localFlags.some(f => haversineDistance(f.lat,f.lon,d.lat,d.lon) < 5)) continue;
+                const flag = { lat:d.lat, lon:d.lon, conf:d.conf, id:d.id, bbox:d.bbox, frame:0, timestamp:Date.now()/1000 };
+                localFlags.push(flag);
+                fetch('/flag_detection', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(flag) }).catch(()=>{});
+                addGmapFlag(flag);
+                document.getElementById('gmapFlagCount').textContent = localFlags.length;
+
+            }
+        }
+
+        async function loadFlags() {
+            try {
+                const resp = await fetch('/flagged_detections');
+                const data = await resp.json();
+                for (const f of data.flags) {
+                    if (localFlags.some(lf => haversineDistance(lf.lat,lf.lon,f.lat,f.lon) < 2)) continue;
+                    localFlags.push(f);
+                    addGmapFlag(f);
+                }
+                document.getElementById('gmapFlagCount').textContent = localFlags.length;
+
+            } catch(e) {}
+        }
+
+        async function manualFlag(lat, lon, conf, id, bbox) {
+            // Toggle: if already flagged, remove it
+            const existIdx = localFlags.findIndex(f => f.id === id);
+            if (existIdx >= 0) {
+                deleteFlag(id);
+                return;
+            }
+            const flag = { lat, lon, conf, id, bbox, frame:0, timestamp:Date.now()/1000 };
+            localFlags.push(flag);
+            addGmapFlag(flag);
+            document.getElementById('gmapFlagCount').textContent = localFlags.length;
+            fetch('/flag_detection', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(flag) }).catch(()=>{});
+            showToast('Flagged #' + id, 'success');
+            flyToGmap(lat, lon);
+        }
+
+        // ── Snapshot popup ──
+        function showSnapshotPopup(flag) {
+            document.getElementById('popupId').textContent   = flag.id;
+            document.getElementById('popupConf').textContent = (flag.conf*100).toFixed(1)+'%';
+            document.getElementById('popupGps').textContent  = (flag.lat?.toFixed(5)??'?') + ', ' + (flag.lon?.toFixed(5)??'?');
+            if (flag.bbox) {
+                const [x1,y1,x2,y2] = flag.bbox.map(Math.round);
+                document.getElementById('popupImg').src = `/detection_snapshot?x1=${x1}&y1=${y1}&x2=${x2}&y2=${y2}`;
+            } else { document.getElementById('popupImg').src = ''; }
+            document.getElementById('snapshotPopup').style.display = '';
+        }
+
+        function showSnapshotFromDet(lat, lon, conf, id, bbox) {
+            if (lat == null) return;
+            showSnapshotPopup({ lat, lon, conf, id, bbox });
+        }
+
+        function onDetCardClick(lat, lon, conf, id, bbox) {
+            if (lat == null) return;
+            // Fly to on 2D map
+            flyToGmap(lat, lon);
+            // Show snapshot on 3D map
+            showSnapshotPopup({ lat, lon, conf, id, bbox });
+        }
+
+        function closePopup() { document.getElementById('snapshotPopup').style.display = 'none'; }
+
+        // ── Clear all flags ──
+        async function clearAllFlags() {
+            if (!confirm('Clear all flag markers?')) return;
+            // Clear backend
+            await fetch('/flagged_detections', { method: 'DELETE' }).catch(() => {});
+            // Clear client-side
+            localFlags.length = 0;
+            // Clear 2D map markers
+            if (_markerClusterGroup) _markerClusterGroup.clearLayers();
+            for (const m of gmapFlagMarkers) m.remove();
+            gmapFlagMarkers.length = 0;
+            document.getElementById('gmapFlagCount').textContent = '0';
+            showToast('All flags cleared', 'success');
+        }
+
+        // ── Click thumbnail → lightbox ──
+        function openLightbox(src) {
+            let lb = document.getElementById('lightbox');
+            if (!lb) {
+                lb = document.createElement('div');
+                lb.id = 'lightbox';
+                lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:zoom-out;';
+                lb.onclick = () => lb.remove();
+                document.body.appendChild(lb);
+            }
+            lb.innerHTML = `<img src="${src}" style="max-width:90vw;max-height:90vh;border-radius:8px;border:1px solid rgba(34,211,238,0.4);box-shadow:0 0 40px rgba(34,211,238,0.2);">`;
+            document.body.appendChild(lb);
+        }
+
+        // ==================================================================
+        // 2D MAP — Leaflet + tile layer switching (no API key needed)
+        // ==================================================================
+        let gmap2d = null;          // Leaflet map instance
+        let gmapDroneMarker = null; // Leaflet circle marker
+        let gmapFlagMarkers = [];   // Leaflet flag markers
+        let _gmapType = 'satellite';
+        let _markerClusterGroup = null;  // MarkerClusterGroup
+
+        const TILE_LAYERS = {
+            satellite: {
+                url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                attribution: 'Esri World Imagery',
+                label: 'Satellite',
+            },
+            roadmap: {
+                url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                attribution: 'OpenStreetMap',
+                label: 'Roadmap',
+            },
+        };
+        let _activeTileLayer = null;
+
+        function _hasGps() {
+            const lat = parseFloat(document.getElementById('cfgLat').value);
+            const lon = parseFloat(document.getElementById('cfgLon').value);
+            return lat && lon && !(lat === 0 && lon === 0);
+        }
+
+        function initGoogleMap2d() {
+            if (gmap2d) { gmap2d.invalidateSize(); return; }
+            const lat = parseFloat(document.getElementById('cfgLat').value) || 0;
+            const lon = parseFloat(document.getElementById('cfgLon').value) || 0;
+            const hasGps = _hasGps();
+
+            // If no GPS yet, show a world overview; otherwise center on drone
+            const initLat = hasGps ? lat : 15;
+            const initLon = hasGps ? lon : 108;
+            const initZoom = hasGps ? 17 : 3;
+
+            gmap2d = L.map('googleMap2d', { zoomControl: true, maxZoom: 22 }).setView([initLat, initLon], initZoom);
+
+            // Load satellite tile layer by default
+            const tl = TILE_LAYERS.satellite;
+            _activeTileLayer = L.tileLayer(tl.url, { maxZoom: 22, maxNativeZoom: 19, attribution: tl.attribution }).addTo(gmap2d);
+
+            // MarkerCluster group
+            _markerClusterGroup = L.markerClusterGroup({
+                maxClusterRadius: 40,
+                spiderfyOnMaxZoom: true,
+                showCoverageOnHover: false,
+                iconCreateFunction: function(cluster) {
+                    const count = cluster.getChildCount();
+                    return L.divIcon({
+                        html: `<div style="background:rgba(248,113,113,0.85);color:#fff;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;border:2px solid #fff;box-shadow:0 0 6px rgba(0,0,0,0.4)">${count}</div>`,
+                        className: '',
+                        iconSize: [32, 32],
+                    });
+                },
+            });
+            gmap2d.addLayer(_markerClusterGroup);
+
+            // Drone marker — only show if GPS data exists
+            if (hasGps) {
+                gmapDroneMarker = L.circleMarker([lat, lon], {
+                    radius: 8, color: '#fff', weight: 2,
+                    fillColor: '#22d3ee', fillOpacity: 1,
+                }).addTo(gmap2d).bindTooltip('Drone', { permanent: false });
+            }
+
+            // Load existing flags
+            for (const f of localFlags) addGmapFlag(f);
+            setTimeout(() => gmap2d.invalidateSize(), 200);
+        }
+
+        function addGmapFlag(flag) {
+            if (!gmap2d) return;
+            if (flag == null || flag.lat == null || flag.lon == null) return;
+            // De-dup
+            if (gmapFlagMarkers.some(m => {
+                const ll = m.getLatLng();
+                return Math.abs(ll.lat - flag.lat) < 0.00005 && Math.abs(ll.lng - flag.lon) < 0.00005;
+            })) return;
+
+            // SVG flag icon
+            const svgIcon = L.divIcon({
+                html: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36">
+                    <line x1="4" y1="36" x2="4" y2="2" stroke="white" stroke-width="2"/>
+                    <polygon points="5,2 22,10 5,18" fill="#f87171" stroke="white" stroke-width="1"/>
+                </svg>`,
+                className: '',
+                iconSize: [24, 36],
+                iconAnchor: [4, 36],
+                popupAnchor: [8, -36],
+            });
+
+            const snapImg = flag.bbox
+                ? `<img src="/detection_snapshot?x1=${Math.round(flag.bbox[0])}&y1=${Math.round(flag.bbox[1])}&x2=${Math.round(flag.bbox[2])}&y2=${Math.round(flag.bbox[3])}" style="width:100%;margin-top:6px;border-radius:4px;max-height:120px;object-fit:cover;">`
+                : '';
+
+            const marker = L.marker([flag.lat, flag.lon], { icon: svgIcon })
+                .bindPopup(`<div style="background:#111827;color:#e2e8f0;padding:8px;border-radius:6px;font-size:12px;min-width:160px;">
+                    <b style="color:#22d3ee">#${flag.id}</b> — ${(flag.conf*100).toFixed(1)}%<br>
+                    <span style="color:#94a3b8">${flag.lat.toFixed(5)}, ${flag.lon.toFixed(5)}</span>
+                    ${snapImg}
+                </div>`, { maxWidth: 200 });
+            marker._flagId = flag.id;
+            if (_markerClusterGroup) {
+                _markerClusterGroup.addLayer(marker);
+            } else {
+                marker.addTo(gmap2d);
+            }
+            gmapFlagMarkers.push(marker);
+        }
+
+        function updateGmap2d(dets) {
+            if (!gmap2d) return;
+            if (!_hasGps()) return;
+            const lat = parseFloat(document.getElementById('cfgLat').value);
+            const lon = parseFloat(document.getElementById('cfgLon').value);
+            if (!gmapDroneMarker) {
+                // First time GPS arrives — create marker and fly to position
+                gmapDroneMarker = L.circleMarker([lat, lon], {
+                    radius: 8, color: '#fff', weight: 2,
+                    fillColor: '#22d3ee', fillOpacity: 1,
+                }).addTo(gmap2d).bindTooltip('Drone', { permanent: false });
+                gmap2d.setView([lat, lon], 17);
+            } else {
+                gmapDroneMarker.setLatLng([lat, lon]);
+            }
+        }
+
+        function flyToGmap(lat, lon) {
+            const btn = document.querySelector('[data-br="br2dMap"]');
+            switchBr(btn);
+            const tryFly = () => {
+                if (!gmap2d) { setTimeout(tryFly, 300); return; }
+                gmap2d.setView([lat, lon], 19);
+            };
+            tryFly();
+        }
+
+        function toggleMapType() {
+            if (!gmap2d) return;
+            if (_activeTileLayer) gmap2d.removeLayer(_activeTileLayer);
+            if (_gmapType === 'satellite') {
+                const tl = TILE_LAYERS.roadmap;
+                _activeTileLayer = L.tileLayer(tl.url, { maxZoom: 22, maxNativeZoom: 19, attribution: tl.attribution }).addTo(gmap2d);
+                _gmapType = 'roadmap';
+                document.getElementById('gmapMode').textContent = 'Roadmap';
+                document.getElementById('mapTypeBtn').textContent = 'Satellite';
+            } else {
+                const tl = TILE_LAYERS.satellite;
+                _activeTileLayer = L.tileLayer(tl.url, { maxZoom: 22, maxNativeZoom: 19, attribution: tl.attribution }).addTo(gmap2d);
+                _gmapType = 'satellite';
+                document.getElementById('gmapMode').textContent = 'Satellite';
+                document.getElementById('mapTypeBtn').textContent = 'Roadmap';
+            }
+        }
+
+        // ==================================================================
+        // LEAFLET — Coverage heat map
+        // ==================================================================
+        let leafletMap = null;
+        let heatLayer = null;
+
+        let leafletDroneMarker = null;
+
+        function initLeaflet() {
+            if (leafletMap) { setTimeout(() => leafletMap.invalidateSize(), 100); return; }
+            const lat = parseFloat(document.getElementById('cfgLat').value) || 0;
+            const lon = parseFloat(document.getElementById('cfgLon').value) || 0;
+            const hasGps = _hasGps();
+            const initLat = hasGps ? lat : 15;
+            const initLon = hasGps ? lon : 108;
+            const initZoom = hasGps ? 17 : 3;
+
+            leafletMap = L.map('leafletMap').setView([initLat, initLon], initZoom);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20, attribution: 'OSM' }).addTo(leafletMap);
+            heatLayer = L.heatLayer([], {
+                radius: 18, blur: 12, maxZoom: 18, max: 1.0,
+                gradient: { 0.2:'#3b82f6', 0.4:'#22d3ee', 0.6:'#34d399', 0.8:'#fbbf24', 1.0:'#f87171' },
+            }).addTo(leafletMap);
+            if (hasGps) {
+                leafletDroneMarker = L.circleMarker([lat,lon], { radius:6, color:'#22d3ee', fillColor:'#22d3ee', fillOpacity:0.8, weight:2 })
+                    .addTo(leafletMap).bindPopup('Drone position');
+            }
+            setTimeout(() => leafletMap.invalidateSize(), 200);
+        }
+
+        async function updateHeatMap() {
+            if (!leafletMap || !heatLayer) return;
+            try {
+                const resp = await fetch('/detection_history');
+                const data = await resp.json();
+                heatLayer.setLatLngs(data.history.map(h => [h.lat, h.lon, h.conf]));
+                document.getElementById('coverageTotal').textContent = data.count;
+            } catch(e) {}
+        }
+
+        // ── Det-only update (khi drone khong di chuyen) ──
+        // ── Delete single flag ──
+        async function deleteFlag(id) {
+            // Remove from backend
+            fetch(`/flag_detection/${id}`, { method: 'DELETE' }).catch(() => {});
+            // Remove from local
+            const idx = localFlags.findIndex(f => f.id === id);
+            if (idx >= 0) localFlags.splice(idx, 1);
+            // Remove from 2D map (marker is in cluster group or directly on map)
+            const mIdx = gmapFlagMarkers.findIndex(m => m._flagId === id);
+            if (mIdx >= 0) {
+                const m = gmapFlagMarkers[mIdx];
+                if (_markerClusterGroup) {
+                    _markerClusterGroup.removeLayer(m);
+                } else {
+                    m.remove();
+                }
+                gmapFlagMarkers.splice(mIdx, 1);
+            }
+            document.getElementById('gmapFlagCount').textContent = localFlags.length;
+            showToast('Removed flag #' + id, '');
+        }
+
+        // ── Seek to frame (click flag on map → video jumps to that frame) ──
+        function seekToFrame(frame, totalFrames) {
+            if (!totalFrames || totalFrames <= 0) return;
+            const ratio = frame / totalFrames;
+            fetch('/seek', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ratio}) }).catch(()=>{});
+            document.getElementById('seekBar').value = Math.round(ratio * 1000);
+            document.getElementById('frameLabel').textContent = Math.round(ratio * 100) + '%';
+            showToast('Seeking to frame ' + frame, '');
+        }
+
+        // ── Dashboard chart (canvas) ──
+        async function updateDashboard() {
+            try {
+                const resp = await fetch('/detection_timeline');
+                const data = await resp.json();
+                drawTimeline(data.timeline);
+            } catch(e) {}
+        }
+
+        // Store processed data for click-to-seek
+        let _dashData = null;
+
+        function drawTimeline(timeline) {
+            const canvas = document.getElementById('dashCanvas');
+            if (!canvas) return;
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = rect.width * window.devicePixelRatio;
+            canvas.height = rect.height * window.devicePixelRatio;
+            const ctx = canvas.getContext('2d');
+            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+            const W = rect.width, H = rect.height;
+
+            ctx.clearRect(0, 0, W, H);
+            if (timeline.length < 2) {
+                ctx.fillStyle = '#94a3b8'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+                ctx.fillText('Waiting for data...', W/2, H/2);
+                return;
+            }
+
+            // 1. Temporal binning — group by ~1 second intervals
+            const bins = [];
+            let binStart = timeline[0].ts;
+            let binCounts = [], binFrames = [];
+            for (const t of timeline) {
+                if (t.ts - binStart > 1.0 && binCounts.length > 0) {
+                    bins.push({
+                        count: Math.max(...binCounts),
+                        avg: binCounts.reduce((a,b)=>a+b,0)/binCounts.length,
+                        frame: binFrames[binCounts.indexOf(Math.max(...binCounts))],
+                        ts: binStart + (t.ts - binStart)/2,
+                    });
+                    binStart = t.ts;
+                    binCounts = []; binFrames = [];
+                }
+                binCounts.push(t.count);
+                binFrames.push(t.frame);
+            }
+            if (binCounts.length > 0) {
+                bins.push({
+                    count: Math.max(...binCounts),
+                    avg: binCounts.reduce((a,b)=>a+b,0)/binCounts.length,
+                    frame: binFrames[binCounts.indexOf(Math.max(...binCounts))],
+                    ts: binStart,
+                });
+            }
+
+            // 2. Moving Average (SMA)
+            const smaN = parseInt(document.getElementById('dashSmooth').value) || 10;
+            const rawCounts = bins.map(b => b.count);
+            const smoothed = [];
+            for (let i = 0; i < rawCounts.length; i++) {
+                const start = Math.max(0, i - smaN + 1);
+                const window = rawCounts.slice(start, i + 1);
+                smoothed.push(window.reduce((a,b)=>a+b,0) / window.length);
+            }
+
+            const maxC = Math.max(...rawCounts, 1);
+            const pad = { top: 24, right: 16, bottom: 32, left: 40 };
+            const cw = W - pad.left - pad.right;
+            const ch = H - pad.top - pad.bottom;
+
+            // Store for click-to-seek
+            _dashData = { bins, smoothed, pad, cw, ch, W, H, maxC };
+
+            // Y axis grid + labels
+            ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1;
+            const ySteps = Math.min(maxC, 5);
+            for (let i = 0; i <= ySteps; i++) {
+                const val = Math.round(maxC * i / ySteps);
+                const y = pad.top + ch - (val/maxC)*ch;
+                ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W-pad.right, y); ctx.stroke();
+                ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+                ctx.fillText(val, pad.left-6, y+3);
+            }
+
+            // 5. Color-coded threshold zones (background bands)
+            // 0-2: cyan zone, 3-5: yellow zone, >5: red zone
+            const zoneAlpha = 0.04;
+            if (maxC > 2) {
+                const y2 = pad.top + ch - (2/maxC)*ch;
+                ctx.fillStyle = `rgba(34,211,238,${zoneAlpha})`;
+                ctx.fillRect(pad.left, y2, cw, pad.top+ch-y2);
+            }
+            if (maxC > 2) {
+                const y5 = pad.top + ch - (Math.min(5,maxC)/maxC)*ch;
+                const y2 = pad.top + ch - (2/maxC)*ch;
+                ctx.fillStyle = `rgba(251,191,36,${zoneAlpha})`;
+                ctx.fillRect(pad.left, y5, cw, y2-y5);
+            }
+            if (maxC > 5) {
+                const y5 = pad.top + ch - (5/maxC)*ch;
+                ctx.fillStyle = `rgba(248,113,113,${zoneAlpha})`;
+                ctx.fillRect(pad.left, pad.top, cw, y5-pad.top);
+            }
+
+            // Threshold lines at y=3 and y=5
+            ctx.setLineDash([4, 4]);
+            if (maxC >= 3) {
+                const y3 = pad.top + ch - (3/maxC)*ch;
+                ctx.strokeStyle = 'rgba(251,191,36,0.3)'; ctx.beginPath();
+                ctx.moveTo(pad.left, y3); ctx.lineTo(W-pad.right, y3); ctx.stroke();
+            }
+            if (maxC >= 5) {
+                const y5 = pad.top + ch - (5/maxC)*ch;
+                ctx.strokeStyle = 'rgba(248,113,113,0.3)'; ctx.beginPath();
+                ctx.moveTo(pad.left, y5); ctx.lineTo(W-pad.right, y5); ctx.stroke();
+            }
+            ctx.setLineDash([]);
+
+            const step = smoothed.length > 1 ? cw / (smoothed.length - 1) : cw;
+
+            // 3. Area chart with color-coded gradient
+            for (let seg = 0; seg < smoothed.length - 1; seg++) {
+                const x1 = pad.left + seg * step;
+                const x2 = pad.left + (seg+1) * step;
+                const v1 = smoothed[seg], v2 = smoothed[seg+1];
+                const y1 = pad.top + ch - (v1/maxC)*ch;
+                const y2 = pad.top + ch - (v2/maxC)*ch;
+                const avgVal = (v1 + v2) / 2;
+
+                // Color based on threshold
+                let color;
+                if (avgVal > 5) color = [248,113,113];       // red
+                else if (avgVal > 2) color = [251,191,36];    // yellow
+                else color = [34,211,238];                     // cyan
+
+                // Area fill
+                ctx.beginPath();
+                ctx.moveTo(x1, pad.top+ch);
+                ctx.lineTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.lineTo(x2, pad.top+ch);
+                ctx.closePath();
+                const grad = ctx.createLinearGradient(0, Math.min(y1,y2), 0, pad.top+ch);
+                grad.addColorStop(0, `rgba(${color[0]},${color[1]},${color[2]},0.35)`);
+                grad.addColorStop(1, `rgba(${color[0]},${color[1]},${color[2]},0.03)`);
+                ctx.fillStyle = grad;
+                ctx.fill();
+
+                // Line segment
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.9)`;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+
+            // Peak dots (highlight points where count >= 3)
+            for (let i = 0; i < smoothed.length; i++) {
+                if (rawCounts[i] >= 3) {
+                    const x = pad.left + i * step;
+                    const y = pad.top + ch - (smoothed[i]/maxC)*ch;
+                    const val = rawCounts[i];
+                    let dotColor = val > 5 ? '#f87171' : val > 2 ? '#fbbf24' : '#22d3ee';
+                    ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI*2);
+                    ctx.fillStyle = dotColor; ctx.fill();
+                    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
+                }
+            }
+
+            // X axis — time labels
+            ctx.fillStyle = '#64748b'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
+            const t0 = bins[0].ts;
+            const labelCount = Math.min(6, bins.length);
+            for (let i = 0; i < labelCount; i++) {
+                const idx = Math.round(i * (bins.length-1) / (labelCount-1));
+                const x = pad.left + idx * step;
+                const sec = Math.round(bins[idx].ts - t0);
+                ctx.fillText(sec + 's', x, H - 8);
+            }
+
+            // Y axis label
+            ctx.save();
+            ctx.fillStyle = '#64748b'; ctx.font = '9px sans-serif';
+            ctx.translate(10, pad.top + ch/2);
+            ctx.rotate(-Math.PI/2);
+            ctx.textAlign = 'center';
+            ctx.fillText('Persons', 0, 0);
+            ctx.restore();
+
+            // Stats
+            const totalDet = rawCounts.reduce((a,b)=>a+b, 0);
+            document.getElementById('dashTotal').textContent = totalDet;
+            document.getElementById('dashMax').textContent = maxC;
+        }
+
+        // 4. Click-to-seek — click on chart to jump video to that time
+        function initDashInteraction() {
+            const canvas = document.getElementById('dashCanvas');
+            if (!canvas) return;
+
+            // Tooltip on hover
+            canvas.addEventListener('mousemove', function(e) {
+                if (!_dashData || !_dashData.bins.length) return;
+                const rect = canvas.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
+                const d = _dashData;
+                if (mx < d.pad.left || mx > d.W - d.pad.right) {
+                    document.getElementById('dashTooltip').style.display = 'none'; return;
+                }
+                const step = d.smoothed.length > 1 ? d.cw / (d.smoothed.length - 1) : d.cw;
+                const idx = Math.round((mx - d.pad.left) / step);
+                if (idx < 0 || idx >= d.bins.length) {
+                    document.getElementById('dashTooltip').style.display = 'none'; return;
+                }
+                const bin = d.bins[idx];
+                const sec = (bin.ts - d.bins[0].ts).toFixed(1);
+                const tt = document.getElementById('dashTooltip');
+                let levelColor = bin.count > 5 ? '#f87171' : bin.count > 2 ? '#fbbf24' : '#22d3ee';
+                tt.innerHTML = `<span style="color:${levelColor};font-weight:700">${bin.count} persons</span><br>Frame: ${bin.frame}<br>Time: ${sec}s<br><span style="color:var(--accent-h)">Click to seek</span>`;
+                tt.style.display = '';
+                tt.style.left = Math.min(mx + 12, d.W - 130) + 'px';
+                tt.style.top = Math.max(my - 60, 4) + 'px';
+            });
+
+            canvas.addEventListener('mouseleave', function() {
+                document.getElementById('dashTooltip').style.display = 'none';
+            });
+
+            canvas.addEventListener('click', function(e) {
+                if (!_dashData || !_dashData.bins.length) return;
+                const rect = canvas.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const d = _dashData;
+                if (mx < d.pad.left || mx > d.W - d.pad.right) return;
+                const step = d.smoothed.length > 1 ? d.cw / (d.smoothed.length - 1) : d.cw;
+                const idx = Math.round((mx - d.pad.left) / step);
+                if (idx < 0 || idx >= d.bins.length) return;
+                const bin = d.bins[idx];
+                // Seek video to this frame
+                const totalFrames = parseInt(document.getElementById('frameLabel').dataset.total || 0);
+                if (bin.frame > 0) {
+                    const ratio = totalFrames > 0 ? bin.frame / totalFrames : 0;
+                    fetch('/seek', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ratio}) }).catch(()=>{});
+                    showToast(`Seeking to ${bin.count} persons at frame ${bin.frame}`, 'success');
+                }
+            });
+        }
+
+        // ==================================================================
+        // INIT on load
+        // ==================================================================
+        window.addEventListener('load', () => {
+            // Clear any stale GPS from previous session
+            document.getElementById('cfgLat').value = '';
+            document.getElementById('cfgLon').value = '';
+            document.getElementById('cfgAlt').value = '';
+            setTimeout(initGoogleMap2d, 300);
+            initDashInteraction();
+            loadFlags();
+        });
+    </script>
+
+</body>
+</html>
